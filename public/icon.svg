@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#1E2538"/>
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="none" stroke="#B7C9D6" stroke-width="8" opacity="0.4"/>
+  <!-- Inner card accent -->
+  <rect x="56" y="56" width="400" height="400" rx="72" fill="#252E45"/>
+  <!-- Code brackets </> -->
+  <path d="M190 176 L110 256 L190 336" fill="none" stroke="#D9E8F4" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M322 176 L402 256 L322 336" fill="none" stroke="#D9E8F4" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="284" y1="160" x2="228" y2="352" stroke="#C5D9E9" stroke-width="32" stroke-linecap="round"/>
+  <!-- Subtle dots for the 4 subjects -->
+  <circle cx="160" cy="400" r="10" fill="#B7C9D6"/>
+  <circle cx="224" cy="400" r="10" fill="#D9E8F4"/>
+  <circle cx="288" cy="400" r="10" fill="#C5D9E9"/>
+  <circle cx="352" cy="400" r="10" fill="#F4F7F9"/>
+</svg>

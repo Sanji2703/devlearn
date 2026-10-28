@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export type NavTab = 'dashboard' | 'subjects' | 'exercises' | 'planning' | 'focus' | 'progress';
 
@@ -91,6 +92,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-2.5">
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="navbar" />
+
             {/* Quick Reorganize button */}
             <button
               onClick={onOpenReorganize}

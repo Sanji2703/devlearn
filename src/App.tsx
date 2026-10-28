@@ -11,6 +11,7 @@ import { ProgressView } from './components/ProgressView';
 import { ReorganizeModal } from './components/ReorganizeModal';
 import { AvailabilityModal } from './components/AvailabilityModal';
 import { DailyReviewModal } from './components/DailyReviewModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { SubjectId } from './types';
 
 function MainApp() {
@@ -53,6 +54,9 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] text-[#1E2538] flex flex-col font-sans selection:bg-[#C5D9E9] selection:text-[#1E2538]">
+      {/* Offline Alert */}
+      <OfflineIndicator />
+
       {/* Navigation Bar */}
       <Navbar
         currentTab={currentTab}

@@ -16,6 +16,7 @@ import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { SUBJECTS, SubjectId, ACTIVITY_TYPE_LABELS, DIFFICULTY_LABELS } from '../types';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface DashboardViewProps {
   onOpenReorganize: () => void;
@@ -194,6 +195,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
         </div>
+        
+        {/* PWA Android Install Banner */}
+        <PWAInstallButton variant="banner" className="mt-4" />
 
         {/* Sync Prompt if not logged in */}
         {!user && (
