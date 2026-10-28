@@ -1,0 +1,6 @@
+{
+  "name": "DevLearn - Assistant d'Apprentissage",
+  "description": "Assistant intelligent de gestion d'apprentissage pour C, C++, Python et SQL avec planning dynamique, gestion d'exercices et synchronisation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
