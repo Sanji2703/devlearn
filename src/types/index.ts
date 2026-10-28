@@ -195,3 +195,26 @@ export interface DailyReview {
   carryOverNotes?: string;
   createdAt: string;
 }
+
+export interface UserSettings {
+  userId: string;
+  dailyStudyTargetMinutes: number;
+  preferredSubject: SubjectId | 'all';
+  defaultSessionDuration: number;
+  notificationsEnabled: boolean;
+  soundEnabled: boolean;
+  autoPostponeUnfinished: boolean;
+  updatedAt: string;
+}
+
+export const DEFAULT_USER_SETTINGS: UserSettings = {
+  userId: '',
+  dailyStudyTargetMinutes: 120,
+  preferredSubject: 'all',
+  defaultSessionDuration: 30,
+  notificationsEnabled: true,
+  soundEnabled: true,
+  autoPostponeUnfinished: true,
+  updatedAt: new Date().toISOString(),
+};
+

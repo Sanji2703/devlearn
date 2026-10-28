@@ -9,9 +9,11 @@ import {
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { SubjectId, SUBJECTS } from '../types';
+import { Target, Smartphone } from 'lucide-react';
 
 export const ProgressView: React.FC = () => {
-  const { modules, exercises, sessions } = useData();
+  const { modules, exercises, sessions, settings } = useData();
+
 
   const subjectsList: SubjectId[] = ['c', 'cpp', 'python', 'sql'];
 
@@ -145,6 +147,34 @@ export const ProgressView: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Synced Settings & Goal Banner */}
+      <div className="p-4 rounded-xl bg-white border border-[#B7C9D6] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#D9E8F4] text-[#1E2538] flex items-center justify-center border border-[#B7C9D6] shrink-0">
+            <Target className="w-4 h-4 text-[#1E2538]" />
+          </div>
+          <div>
+            <div className="font-bold text-[#1E2538] text-sm">
+              Objectif quotidien configuré : {settings.dailyStudyTargetMinutes} min ({settings.dailyStudyTargetMinutes / 60} h / jour)
+            </div>
+            <div className="text-[11px] text-[#9BA7B8] flex items-center gap-2 mt-0.5">
+              <span>Technologie prioritaire : <strong className="text-[#1E2538]">{settings.preferredSubject === 'all' ? 'Équilibré (Toutes)' : SUBJECTS[settings.preferredSubject]?.name || settings.preferredSubject}</strong></span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Smartphone className="w-3 h-3 text-[#1E2538]" />
+                Synchronisé sur PC & Android
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-[#D9E8F4] text-[#1E2538] border border-[#B7C9D6] font-semibold">
+            Chrono par défaut : {settings.defaultSessionDuration} min
+          </span>
+        </div>
+      </div>
+
 
       {/* Visual Distribution of Study Time (SVG Bar) */}
       <div className="p-5 rounded-xl bg-white border border-[#B7C9D6] shadow-xs">

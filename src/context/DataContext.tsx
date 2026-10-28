@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import {
   collection,
   query,
@@ -8,6 +8,8 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
+  getDocs,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from './AuthContext';
@@ -20,8 +22,12 @@ import {
   DailyReview,
   SubjectId,
   ModuleStatus,
-  ExerciseStatus
+  ExerciseStatus,
+  UserSettings,
+  DEFAULT_USER_SETTINGS,
 } from '../types';
+
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 
 interface DataContextType {
   modules: LearningModule[];
@@ -29,9 +35,13 @@ interface DataContextType {
   activities: ScheduleActivity[];
   sessions: StudySession[];
   reviews: DailyReview[];
+  settings: UserSettings;
   isLoadingData: boolean;
   isSyncing: boolean;
+  syncStatus: SyncStatus;
   syncError: string | null;
+  lastSyncedAt: Date | null;
+  refreshData: () => Promise<void>;
 
   // Module actions
   saveModule: (moduleData: Partial<LearningModule> & { subject: SubjectId; title: string }) => Promise<string>;
@@ -47,7 +57,11 @@ interface DataContextType {
   saveActivity: (activityData: Partial<ScheduleActivity> & { title: string; date: string; startTime: string; endTime: string }) => Promise<string>;
   deleteActivity: (activityId: string) => Promise<void>;
   toggleActivityComplete: (activityId: string) => Promise<void>;
+  postponeActivity: (activityId: string, targetDate: string, newStartTime?: string, newEndTime?: string) => Promise<void>;
   applyReorganizedSchedule: (newActivities: ScheduleActivity[]) => Promise<void>;
+
+  // User settings actions
+  updateSettings: (newSettings: Partial<UserSettings>) => Promise<void>;
 
   // Study session actions
   logStudySession: (sessionData: Omit<StudySession, 'id' | 'userId' | 'createdAt'>) => Promise<string>;
@@ -61,8 +75,9 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, isTokenValid, loading: authLoading } = useAuth();
 
   // Initialize state immediately from localStorage so data NEVER vanishes on refresh
   const initialLocalData = useRef(loadLocalData(user?.uid)).current;
@@ -71,35 +86,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activities, setActivities] = useState<ScheduleActivity[]>(initialLocalData.activities);
   const [sessions, setSessions] = useState<StudySession[]>(initialLocalData.sessions);
   const [reviews, setReviews] = useState<DailyReview[]>(initialLocalData.reviews);
+  const [settings, setSettings] = useState<UserSettings>(initialLocalData.settings);
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+
+  const syncStatus: SyncStatus = !user
+    ? 'offline'
+    : !isTokenValid
+    ? 'offline'
+    : isSyncing
+    ? 'syncing'
+    : syncError
+    ? 'error'
+    : 'synced';
 
   // Sync to local storage whenever state changes
   useEffect(() => {
-    saveLocalData(user?.uid, { modules, exercises, activities, sessions, reviews });
-  }, [modules, exercises, activities, sessions, reviews, user?.uid]);
+    saveLocalData(user?.uid, { modules, exercises, activities, sessions, reviews, settings });
+  }, [modules, exercises, activities, sessions, reviews, settings, user?.uid]);
 
   // Firestore real-time subscriptions & sync
   useEffect(() => {
     // If auth state is still loading, wait before changing listeners
     if (authLoading) return;
 
-    if (!user) {
-      // Unauthenticated / offline mode: reload local data safely
-      const local = loadLocalData(null);
+    if (!user || !isTokenValid) {
+      // Unauthenticated / offline mode / token service not yet enabled: reload local data safely
+      const local = loadLocalData(user?.uid || null);
       setModules(local.modules);
       setExercises(local.exercises);
       setActivities(local.activities);
       setSessions(local.sessions);
       setReviews(local.reviews);
+      setSettings(local.settings);
       setIsLoadingData(false);
+      if (user && !isTokenValid) {
+        setSyncError('Service de jetons d’authentification en cours d’activation sur Google Cloud (mode local actif).');
+      } else {
+        setSyncError(null);
+      }
       return;
     }
 
     setIsLoadingData(true);
     setSyncError(null);
+
+    const markSynced = () => {
+      setLastSyncedAt(new Date());
+      setIsLoadingData(false);
+    };
+
+    const handleListenerError = (name: string, error: any) => {
+      console.warn(`[Firestore onSnapshot] ${name} error:`, error);
+      const code = error?.code || '';
+      const msg = error?.message || String(error);
+      if (code === 'permission-denied') {
+        setSyncError('Accès Firestore refusé : vérifiez les règles de sécurité.');
+      } else if (code === 'unavailable') {
+        setSyncError('Connexion Firestore momentanément interrompue (mode hors-ligne actif).');
+      } else if (msg.includes('token-service-api-has-not-been-used') || msg.includes('securetoken.googleapis.com') || msg.includes('Fetching auth token failed')) {
+        setSyncError('Service de jetons Google en attente d’activation (mode local actif).');
+      } else {
+        setSyncError(`Synchronisation ${name} en attente du réseau.`);
+      }
+      setIsLoadingData(false);
+    };
 
     // 1. Modules subscription
     const modulesCol = 'modules';
@@ -125,13 +179,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items.sort((a, b) => (a.order || 0) - (b.order || 0));
         setModules(items);
         saveLocalData(user.uid, { modules: items });
-        setIsLoadingData(false);
+        markSynced();
       },
-      (error) => {
-        console.warn('Modules listener warning:', error);
-        // Do not crash, keep local data
-        setIsLoadingData(false);
-      }
+      (error) => handleListenerError('modules', error)
     );
 
     // 2. Exercises subscription
@@ -146,10 +196,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         setExercises(items);
         saveLocalData(user.uid, { exercises: items });
+        markSynced();
       },
-      (error) => {
-        console.warn('Exercises listener warning:', error);
-      }
+      (error) => handleListenerError('exercises', error)
     );
 
     // 3. Activities subscription
@@ -165,10 +214,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
         setActivities(items);
         saveLocalData(user.uid, { activities: items });
+        markSynced();
       },
-      (error) => {
-        console.warn('Activities listener warning:', error);
-      }
+      (error) => handleListenerError('activities', error)
     );
 
     // 4. Sessions subscription
@@ -184,10 +232,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items.sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
         setSessions(items);
         saveLocalData(user.uid, { sessions: items });
+        markSynced();
       },
-      (error) => {
-        console.warn('Sessions listener warning:', error);
-      }
+      (error) => handleListenerError('sessions', error)
     );
 
     // 5. Reviews subscription
@@ -203,10 +250,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         items.sort((a, b) => b.date.localeCompare(a.date));
         setReviews(items);
         saveLocalData(user.uid, { reviews: items });
+        markSynced();
       },
-      (error) => {
-        console.warn('Reviews listener warning:', error);
-      }
+      (error) => handleListenerError('reviews', error)
+    );
+
+    // 6. Settings subscription
+    const userSettingsDocRef = doc(db, 'settings', user.uid);
+    const unsubSettings = onSnapshot(
+      userSettingsDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const remoteSettings = docSnap.data() as UserSettings;
+          setSettings(remoteSettings);
+          saveLocalData(user.uid, { settings: remoteSettings });
+        }
+        markSynced();
+      },
+      (error) => handleListenerError('settings', error)
     );
 
     return () => {
@@ -215,8 +276,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubActivities();
       unsubSessions();
       unsubReviews();
+      unsubSettings();
     };
-  }, [user, authLoading]);
+  }, [user, isTokenValid, authLoading]);
+
 
   // Actions: Module
   const saveModule = async (moduleData: Partial<LearningModule> & { subject: SubjectId; title: string }): Promise<string> => {
@@ -245,7 +308,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         const firestorePayload = {
           ...payload,
@@ -269,7 +332,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await deleteDoc(doc(db, 'modules', moduleId));
       } catch (error) {
@@ -287,7 +350,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await updateDoc(doc(db, 'modules', moduleId), {
           status,
@@ -331,7 +394,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await setDoc(doc(db, 'exercises', id), payload, { merge: true });
       } catch (error) {
@@ -351,7 +414,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await deleteDoc(doc(db, 'exercises', exerciseId));
       } catch (error) {
@@ -369,7 +432,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await updateDoc(doc(db, 'exercises', exerciseId), {
           status,
@@ -419,7 +482,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await setDoc(doc(db, 'activities', id), payload, { merge: true });
       } catch (error) {
@@ -439,7 +502,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await deleteDoc(doc(db, 'activities', activityId));
       } catch (error) {
@@ -461,7 +524,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await updateDoc(doc(db, 'activities', activityId), {
           isCompleted: nextCompleted,
@@ -471,6 +534,50 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Failed to toggle activity in Firestore:', error);
       }
     }
+  };
+
+  const postponeActivity = async (
+    activityId: string,
+    targetDate: string,
+    newStartTime?: string,
+    newEndTime?: string
+  ): Promise<void> => {
+    setIsSyncing(true);
+    const act = activities.find((a) => a.id === activityId);
+    if (!act) {
+      setIsSyncing(false);
+      return;
+    }
+    const now = new Date().toISOString();
+    const updated: ScheduleActivity = {
+      ...act,
+      date: targetDate,
+      ...(newStartTime ? { startTime: newStartTime } : {}),
+      ...(newEndTime ? { endTime: newEndTime } : {}),
+      updatedAt: now,
+    };
+
+    setActivities((prev) => {
+      const next = prev.map((a) => (a.id === activityId ? updated : a));
+      next.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      saveLocalData(user?.uid, { activities: next });
+      return next;
+    });
+
+    if (user && isTokenValid) {
+      try {
+        await updateDoc(doc(db, 'activities', activityId), {
+          date: targetDate,
+          ...(newStartTime ? { startTime: newStartTime } : {}),
+          ...(newEndTime ? { endTime: newEndTime } : {}),
+          updatedAt: now,
+        });
+      } catch (error) {
+        console.warn('Failed to postpone activity in Firestore:', error);
+        setSyncError('Échec du report de l’activité sur Firestore.');
+      }
+    }
+    setIsSyncing(false);
   };
 
   const applyReorganizedSchedule = async (newActivities: ScheduleActivity[]): Promise<void> => {
@@ -488,6 +595,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Identify target dates affected
     const targetDates = Array.from(new Set(preparedActivities.map((a) => a.date)));
 
+    // Activities to delete on target dates (non-fixed that are not in the new plan)
+    const activitiesToDelete = activities.filter((a) => 
+      targetDates.includes(a.date) && 
+      !a.isFixed && 
+      !preparedActivities.some((na) => na.id === a.id)
+    );
+
     setActivities((prev) => {
       // Keep activities from other dates
       const preservedOtherDates = prev.filter((a) => !targetDates.includes(a.date));
@@ -504,18 +618,99 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
-        for (const act of preparedActivities) {
-          await setDoc(doc(db, 'activities', act.id), act, { merge: true });
+        const batch = writeBatch(db);
+        // Cleanly delete replaced flexible activities so they don't resurrect in onSnapshot
+        for (const oldAct of activitiesToDelete) {
+          batch.delete(doc(db, 'activities', oldAct.id));
         }
+        // Write new and retained activities
+        for (const act of preparedActivities) {
+          batch.set(doc(db, 'activities', act.id), act, { merge: true });
+        }
+        await batch.commit();
       } catch (error) {
         console.warn('Failed to sync batch reorganized activities to Firestore:', error);
+        setSyncError('Erreur de synchronisation du planning réorganisé.');
       }
     }
 
     setIsSyncing(false);
   };
+
+  // Actions: User Settings
+  const updateSettings = async (newSettings: Partial<UserSettings>): Promise<void> => {
+    setIsSyncing(true);
+    const now = new Date().toISOString();
+    const merged: UserSettings = {
+      ...settings,
+      ...newSettings,
+      userId: user?.uid || 'local',
+      updatedAt: now,
+    };
+
+    setSettings(merged);
+    saveLocalData(user?.uid, { settings: merged });
+
+    if (user && isTokenValid) {
+      try {
+        await setDoc(doc(db, 'settings', user.uid), merged, { merge: true });
+      } catch (error) {
+        console.warn('Failed to update settings in Firestore:', error);
+        setSyncError('Échec de la sauvegarde des paramètres.');
+      }
+    }
+    setIsSyncing(false);
+  };
+
+  // Manual refresh utility for cross-device verification
+  const refreshData = useCallback(async () => {
+    if (!user || !isTokenValid) return;
+    setIsSyncing(true);
+    try {
+      const [modSnap, exSnap, actSnap, sessSnap, revSnap] = await Promise.all([
+        getDocs(query(collection(db, 'modules'), where('userId', '==', user.uid))),
+        getDocs(query(collection(db, 'exercises'), where('userId', '==', user.uid))),
+        getDocs(query(collection(db, 'activities'), where('userId', '==', user.uid))),
+        getDocs(query(collection(db, 'sessions'), where('userId', '==', user.uid))),
+        getDocs(query(collection(db, 'reviews'), where('userId', '==', user.uid))),
+      ]);
+
+      const newModules: LearningModule[] = [];
+      modSnap.forEach((d) => {
+        const data = d.data();
+        let parsedResources = [];
+        if (typeof data.resources === 'string') {
+          try { parsedResources = JSON.parse(data.resources); } catch (_) {}
+        } else if (Array.isArray(data.resources)) {
+          parsedResources = data.resources;
+        }
+        newModules.push({ id: d.id, ...data, resources: parsedResources } as LearningModule);
+      });
+      newModules.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+      const newExercises = exSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Exercise));
+      const newActivities = actSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ScheduleActivity));
+      newActivities.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      const newSessions = sessSnap.docs.map((d) => ({ id: d.id, ...d.data() } as StudySession));
+      newSessions.sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
+      const newReviews = revSnap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyReview));
+      newReviews.sort((a, b) => b.date.localeCompare(a.date));
+
+      setModules(newModules);
+      setExercises(newExercises);
+      setActivities(newActivities);
+      setSessions(newSessions);
+      setReviews(newReviews);
+      setLastSyncedAt(new Date());
+      setSyncError(null);
+    } catch (err: any) {
+      console.warn('Manual refresh warning:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [user, isTokenValid]);
 
   // Actions: Sessions (Focus / Chrono)
   const logStudySession = async (sessionData: Omit<StudySession, 'id' | 'userId' | 'createdAt'>): Promise<string> => {
@@ -535,7 +730,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await setDoc(doc(db, 'sessions', id), payload);
       } catch (error) {
@@ -566,7 +761,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return next;
     });
 
-    if (user) {
+    if (user && isTokenValid) {
       try {
         await setDoc(doc(db, 'reviews', id), payload, { merge: true });
       } catch (error) {
@@ -624,9 +819,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activities,
         sessions,
         reviews,
+        settings,
         isLoadingData,
         isSyncing,
+        syncStatus,
         syncError,
+        lastSyncedAt,
+        refreshData,
         saveModule,
         deleteModule,
         updateModuleStatus,
@@ -636,7 +835,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveActivity,
         deleteActivity,
         toggleActivityComplete,
+        postponeActivity,
         applyReorganizedSchedule,
+        updateSettings,
         logStudySession,
         saveDailyReview,
         seedInitialDataIfEmpty,
@@ -645,6 +846,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {children}
     </DataContext.Provider>
   );
+
 };
 
 export const useData = () => {

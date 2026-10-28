@@ -119,6 +119,22 @@
         "createdAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["userId", "date"]
+    },
+    "settings": {
+      "title": "UserSettings",
+      "description": "User preferences and global learning parameters",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "dailyStudyTargetMinutes": { "type": "number" },
+        "preferredSubject": { "type": "string", "maxLength": 20 },
+        "defaultSessionDuration": { "type": "number" },
+        "notificationsEnabled": { "type": "boolean" },
+        "soundEnabled": { "type": "boolean" },
+        "autoPostponeUnfinished": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId"]
     }
   },
   "firestore": {
@@ -145,6 +161,11 @@
     "/reviews/{reviewId}": {
       "schema": "reviews",
       "description": "Daily reviews and balance"
+    },
+    "/settings/{settingsId}": {
+      "schema": "settings",
+      "description": "User preferences document"
     }
   }
 }
+

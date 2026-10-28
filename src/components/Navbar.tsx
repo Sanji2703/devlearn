@@ -11,7 +11,8 @@ import {
   LogOut,
   Sparkles,
   ClipboardCheck,
-  Smartphone
+  Smartphone,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -25,6 +26,8 @@ interface NavbarProps {
   onTabChange: (tab: NavTab) => void;
   onOpenReorganize: () => void;
   onOpenDailyReview: () => void;
+  onOpenSyncStatus: () => void;
+  onOpenSettings: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -32,9 +35,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange,
   onOpenReorganize,
   onOpenDailyReview,
+  onOpenSyncStatus,
+  onOpenSettings,
 }) => {
   const { user, logout } = useAuth();
-  const { isSyncing, syncError } = useData();
+  const { isSyncing, syncError, syncStatus } = useData();
+
 
   const navItems: Array<{ id: NavTab; label: string; icon: React.FC<{ className?: string }> }> = [
     { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -115,8 +121,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden xl:inline">Bilan</span>
             </button>
 
-            {/* Sync status */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#D9E8F4] border border-[#B7C9D6] text-[11px] text-[#1E2538]">
+            {/* Interactive Sync status button */}
+            <button
+              type="button"
+              onClick={onOpenSyncStatus}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#D9E8F4] hover:bg-[#C5D9E9] border border-[#B7C9D6] text-[11px] text-[#1E2538] transition-colors cursor-pointer"
+              title="Afficher l'état de synchronisation en temps réel"
+            >
               {isSyncing ? (
                 <>
                   <div className="w-2 h-2 rounded-full bg-[#1E2538] animate-ping" />
@@ -125,15 +136,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : syncError ? (
                 <>
                   <CloudAlert className="w-3.5 h-3.5 text-[#1E2538]" />
-                  <span className="hidden sm:inline font-medium">Erreur synchro</span>
+                  <span className="hidden sm:inline font-medium">Avertissement</span>
                 </>
               ) : (
                 <>
                   <CloudCheck className="w-3.5 h-3.5 text-[#1E2538]" />
-                  <span className="hidden sm:inline font-medium">Synchro active</span>
+                  <span className="hidden sm:inline font-medium">Synchro Cloud</span>
                 </>
               )}
-            </div>
+            </button>
+
+            {/* Settings button */}
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="p-1.5 rounded-xl bg-[#D9E8F4] hover:bg-[#C5D9E9] text-[#1E2538] border border-[#B7C9D6] transition-colors cursor-pointer"
+              title="Paramètres & Préférences d'apprentissage"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
 
             {/* User profile or Google Login */}
             {user ? (

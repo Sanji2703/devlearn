@@ -8,8 +8,10 @@ import {
   Lock,
   CheckCircle2,
   Trash2,
-  Play
+  Play,
+  CalendarPlus,
 } from 'lucide-react';
+
 import { useData } from '../context/DataContext';
 import {
   ACTIVITY_TYPE_LABELS,
@@ -35,7 +37,9 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
     saveActivity,
     toggleActivityComplete,
     deleteActivity,
+    postponeActivity,
   } = useData();
+
 
   // Current selected date (YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -333,6 +337,22 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
                     </button>
                   )}
 
+                  {!act.isCompleted && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date(selectedDate);
+                        d.setDate(d.getDate() + 1);
+                        const nextDay = d.toISOString().split('T')[0];
+                        postponeActivity(act.id, nextDay);
+                      }}
+                      className="p-1.5 text-[#9BA7B8] hover:text-[#1E2538] hover:bg-[#D9E8F4] rounded-lg transition-colors cursor-pointer"
+                      title="Reporter au lendemain"
+                    >
+                      <CalendarPlus className="w-4 h-4" />
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       if (confirm(`Supprimer l'activité "${act.title}" ?`)) {
@@ -344,6 +364,7 @@ export const PlanningView: React.FC<PlanningViewProps> = ({
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
+
                 </div>
 
               </div>

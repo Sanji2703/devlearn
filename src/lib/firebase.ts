@@ -32,17 +32,23 @@ googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
-// Test Firestore connection on boot
+// Optional Firestore connection probe (manual only)
 export async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Firestore client is offline or database initializing.");
+    const testDoc = await getDocFromServer(doc(db, 'test', 'connection'));
+    return testDoc.exists();
+  } catch (error: any) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('the client is offline')) {
+      console.warn("Firestore client is offline or operating with local cache.");
+    } else if (msg.includes('token-service-api-has-not-been-used') || msg.includes('securetoken.googleapis.com')) {
+      console.warn("Secure token API is awaiting activation on GCP project 867733881087; operating in offline mode.");
+    } else {
+      console.warn("Firestore probe notice:", msg);
     }
+    return false;
   }
 }
-testConnection();
 
 // Structured Firestore error handler conforming to skill requirements
 export enum OperationType {

@@ -3,6 +3,7 @@
   "appId": "1:867733881087:web:690262318d0cc4bc5c8cca",
   "apiKey": "AIzaSyAHrY7_RQe0D4suvlAGoOxLPK6Nun6oV4k",
   "authDomain": "planar-server-2w1rw.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-devlearnassistan-95c9b591-b881-4781-bbf8-a2d9708494a4",
   "storageBucket": "planar-server-2w1rw.firebasestorage.app",
   "messagingSenderId": "867733881087",
   "measurementId": "",

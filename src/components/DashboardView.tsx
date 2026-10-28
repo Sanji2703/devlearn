@@ -10,8 +10,10 @@ import {
   BookOpen,
   Layers,
   ChevronRight,
-  ClipboardCheck
+  ClipboardCheck,
+  CalendarPlus,
 } from 'lucide-react';
+
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { SUBJECTS, SubjectId, ACTIVITY_TYPE_LABELS, DIFFICULTY_LABELS } from '../types';
@@ -44,9 +46,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     activities,
     sessions,
     toggleActivityComplete,
+    postponeActivity,
     seedInitialDataIfEmpty,
     isLoadingData,
   } = useData();
+
 
   // Current date formatted in French
   const today = new Date();
@@ -487,18 +491,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </div>
                     </div>
 
-                    {act.type === 'study_session' && !act.isCompleted && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigateToFocus(act.subject, act.moduleId, act.exerciseId)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1E2538] hover:bg-[#2C3652] text-white transition-all text-[11px] font-medium shrink-0 cursor-pointer"
-                        title="Lancer le chronomètre de concentration"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>Démarrer</span>
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!act.isCompleted && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() + 1);
+                            const tomorrow = d.toISOString().split('T')[0];
+                            postponeActivity(act.id, tomorrow);
+                          }}
+                          className="p-1 text-[#9BA7B8] hover:text-[#1E2538] hover:bg-[#C5D9E9] rounded-md transition-colors cursor-pointer"
+                          title="Reporter au lendemain"
+                        >
+                          <CalendarPlus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {act.type === 'study_session' && !act.isCompleted && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToFocus(act.subject, act.moduleId, act.exerciseId)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1E2538] hover:bg-[#2C3652] text-white transition-all text-[11px] font-medium shrink-0 cursor-pointer"
+                          title="Lancer le chronomètre de concentration"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Démarrer</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
+
                 );
               })
             )}
