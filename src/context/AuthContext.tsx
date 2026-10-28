@@ -47,7 +47,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (err: any) {
       console.error('Login error in AuthContext:', err);
-      setAuthError(err.message || 'Erreur lors de la connexion Google');
+      let msg = err.message || 'Erreur lors de la connexion Google';
+      if (err.code === 'auth/unauthorized-domain' || msg.includes('unauthorized-domain')) {
+        msg = 'Domaine non autorisé dans Firebase : Veuillez ajouter l’URL de votre site (Netlify) dans Firebase Console > Authentication > Settings > Authorized domains.';
+      } else if (err.code === 'auth/popup-blocked') {
+        msg = 'La fenêtre de connexion a été bloquée par le navigateur. Veuillez autoriser les popups pour ce site.';
+      }
+      setAuthError(msg);
     } finally {
       setIsSigningIn(false);
     }

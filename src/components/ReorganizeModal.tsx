@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { ScheduleActivity, SUBJECTS, SubjectId } from '../types';
+import { localAiReorganize } from '../lib/localAiPlanner';
 
 interface ReorganizeModalProps {
   isOpen: boolean;
@@ -74,15 +75,29 @@ export const ReorganizeModal: React.FC<ReorganizeModalProps> = ({
       });
 
       if (!response.ok) {
-        const errJson = await response.json();
-        throw new Error(errJson.error || 'Erreur lors de la planification intelligente.');
+        throw new Error(`API status ${response.status}`);
       }
 
       const data = await response.json();
+      if (!data || !data.activities) {
+        throw new Error('Réponse invalide');
+      }
       setProposal(data);
     } catch (err: any) {
-      console.error('Reorganize error:', err);
-      setError(err.message || 'Impossible de joindre le service de planification.');
+      console.warn('Backend AI unavailable, using intelligent local planner:', err);
+      // Seamless local planner fallback
+      try {
+        const localResult = localAiReorganize(
+          prompt.trim(),
+          dayActivities,
+          modules,
+          pendingExercises,
+          selectedDate
+        );
+        setProposal(localResult);
+      } catch (fallbackErr: any) {
+        setError('Impossible d’effectuer la réorganisation automatique.');
+      }
     } finally {
       setIsLoading(false);
     }

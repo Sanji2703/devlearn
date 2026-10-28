@@ -22,6 +22,18 @@ function MainApp() {
   const [isReorganizeOpen, setIsReorganizeOpen] = useState(false);
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false);
   const [isDailyReviewOpen, setIsDailyReviewOpen] = useState(false);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [targetModalDate, setTargetModalDate] = useState<string>(todayStr);
+
+  const handleOpenAvailability = (date?: string) => {
+    setTargetModalDate(date || todayStr);
+    setIsAvailabilityOpen(true);
+  };
+
+  const handleOpenReorganize = (date?: string) => {
+    setTargetModalDate(date || todayStr);
+    setIsReorganizeOpen(true);
+  };
 
   // Focus target parameters
   const [focusSubject, setFocusSubject] = useState<SubjectId | undefined>(undefined);
@@ -31,8 +43,6 @@ function MainApp() {
   // Exercise filters
   const [exSubject, setExSubject] = useState<SubjectId | undefined>(undefined);
   const [exModuleId, setExModuleId] = useState<string | undefined>(undefined);
-
-  const todayStr = new Date().toISOString().split('T')[0];
 
   const handleLaunchFocus = (subject?: SubjectId, moduleId?: string, exerciseId?: string) => {
     setFocusSubject(subject);
@@ -72,7 +82,7 @@ function MainApp() {
           }
           setCurrentTab(tab);
         }}
-        onOpenReorganize={() => setIsReorganizeOpen(true)}
+        onOpenReorganize={() => handleOpenReorganize(todayStr)}
         onOpenDailyReview={() => setIsDailyReviewOpen(true)}
       />
 
@@ -80,8 +90,8 @@ function MainApp() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-20 md:pb-8">
         {currentTab === 'dashboard' && (
           <DashboardView
-            onOpenReorganize={() => setIsReorganizeOpen(true)}
-            onOpenAvailability={() => setIsAvailabilityOpen(true)}
+            onOpenReorganize={() => handleOpenReorganize(todayStr)}
+            onOpenAvailability={() => handleOpenAvailability(todayStr)}
             onOpenDailyReview={() => setIsDailyReviewOpen(true)}
             onSelectSubject={handleSelectSubject}
             onNavigateToExercises={() => setCurrentTab('exercises')}
@@ -108,8 +118,8 @@ function MainApp() {
 
         {currentTab === 'planning' && (
           <PlanningView
-            onOpenReorganize={() => setIsReorganizeOpen(true)}
-            onOpenAvailability={() => setIsAvailabilityOpen(true)}
+            onOpenReorganize={(d) => handleOpenReorganize(d)}
+            onOpenAvailability={(d) => handleOpenAvailability(d)}
             onStartFocus={handleLaunchFocus}
           />
         )}
@@ -129,13 +139,13 @@ function MainApp() {
       <ReorganizeModal
         isOpen={isReorganizeOpen}
         onClose={() => setIsReorganizeOpen(false)}
-        selectedDate={todayStr}
+        selectedDate={targetModalDate}
       />
 
       <AvailabilityModal
         isOpen={isAvailabilityOpen}
         onClose={() => setIsAvailabilityOpen(false)}
-        defaultDate={todayStr}
+        defaultDate={targetModalDate}
       />
 
       <DailyReviewModal

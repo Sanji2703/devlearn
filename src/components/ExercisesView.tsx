@@ -9,7 +9,9 @@ import {
   ExternalLink,
   FolderOpen,
   X,
-  Clock
+  Clock,
+  Calendar,
+  Check
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import {
@@ -40,6 +42,7 @@ export const ExercisesView: React.FC<ExercisesViewProps> = ({
     saveExercise,
     deleteExercise,
     updateExerciseStatus,
+    saveActivity,
   } = useData();
 
   // Filters
@@ -66,6 +69,52 @@ export const ExercisesView: React.FC<ExercisesViewProps> = ({
 
   // Drive Picker Modal
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+
+  // Quick Schedule Modal
+  const [schedulingExercise, setSchedulingExercise] = useState<Exercise | null>(null);
+  const [schedDate, setSchedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [schedStart, setSchedStart] = useState('14:00');
+  const [schedEnd, setSchedEnd] = useState('14:45');
+  const [schedSuccess, setSchedSuccess] = useState<string | null>(null);
+
+  const openScheduleModal = (ex: Exercise) => {
+    setSchedulingExercise(ex);
+    setSchedDate(new Date().toISOString().split('T')[0]);
+    const est = ex.estimatedMinutes || 30;
+    setSchedStart('14:00');
+    const endMinutes = 14 * 60 + est;
+    const eh = Math.floor(endMinutes / 60).toString().padStart(2, '0');
+    const em = (endMinutes % 60).toString().padStart(2, '0');
+    setSchedEnd(`${eh}:${em}`);
+    setSchedSuccess(null);
+  };
+
+  const handleConfirmSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!schedulingExercise) return;
+    try {
+      await saveActivity({
+        title: `Séance : ${schedulingExercise.title}`,
+        subject: schedulingExercise.subject,
+        moduleId: schedulingExercise.moduleId,
+        exerciseId: schedulingExercise.id,
+        date: schedDate,
+        startTime: schedStart,
+        endTime: schedEnd,
+        type: 'study_session',
+        isFixed: false,
+        isCompleted: false,
+        notes: `Exercice prévu (${schedulingExercise.difficulty})`,
+      });
+      setSchedSuccess(`Séance planifiée le ${schedDate} (${schedStart} - ${schedEnd}) !`);
+      setTimeout(() => {
+        setSchedulingExercise(null);
+        setSchedSuccess(null);
+      }, 1000);
+    } catch (err: any) {
+      alert(err.message || 'Erreur lors de la planification');
+    }
+  };
 
   // Available modules for current form subject
   const formAvailableModules = modules.filter((m) => m.subject === formSubject);
@@ -349,6 +398,13 @@ export const ExercisesView: React.FC<ExercisesViewProps> = ({
 
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => openScheduleModal(ex)}
+                      className="p-1.5 rounded-lg bg-[#D9E8F4] hover:bg-[#C5D9E9] text-[#1E2538] border border-[#B7C9D6] transition-all cursor-pointer"
+                      title="Planifier cet exercice dans mon emploi du temps"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                    </button>
+                    <button
                       onClick={() => onStartFocusSession(ex.subject, ex.moduleId, ex.id)}
                       className="p-1.5 rounded-lg bg-[#1E2538] hover:bg-[#2C3652] text-white transition-all cursor-pointer"
                       title="Lancer le chronomètre de concentration sur cet exercice"
@@ -623,6 +679,108 @@ export const ExercisesView: React.FC<ExercisesViewProps> = ({
           setIsDriveModalOpen(false);
         }}
       />
+
+      {/* Quick Schedule Modal */}
+      {schedulingExercise && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1E2538]/60 backdrop-blur-xs">
+          <div className="bg-white border border-[#B7C9D6] rounded-xl max-w-sm w-full p-5 shadow-xl relative text-[#1E2538]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#B7C9D6]">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-[#1E2538]" />
+                <h3 className="font-bold text-sm text-[#1E2538]">Planifier cet exercice</h3>
+              </div>
+              <button
+                onClick={() => setSchedulingExercise(null)}
+                className="p-1 text-[#9BA7B8] hover:text-[#1E2538]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="py-2">
+              <span className="text-xs font-semibold text-[#1E2538] block truncate">
+                {schedulingExercise.title}
+              </span>
+              <span className="text-[11px] text-[#9BA7B8]">
+                Durée estimée : {schedulingExercise.estimatedMinutes} min • {schedulingExercise.subject.toUpperCase()}
+              </span>
+            </div>
+
+            <form onSubmit={handleConfirmSchedule} className="space-y-3 mt-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-[#1E2538] mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={schedDate}
+                  onChange={(e) => setSchedDate(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-[#F4F7F9] border border-[#B7C9D6] rounded-xl text-xs outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#1E2538] mb-1">
+                    Début
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={schedStart}
+                    onChange={(e) => {
+                      setSchedStart(e.target.value);
+                      const [sh, sm] = e.target.value.split(':').map(Number);
+                      const est = schedulingExercise.estimatedMinutes || 30;
+                      const endMins = sh * 60 + sm + est;
+                      const eh = Math.floor(endMins / 60).toString().padStart(2, '0');
+                      const em = (endMins % 60).toString().padStart(2, '0');
+                      setSchedEnd(`${eh}:${em}`);
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-[#F4F7F9] border border-[#B7C9D6] rounded-xl text-xs outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#1E2538] mb-1">
+                    Fin
+                  </label>
+                  <input
+                    type="time"
+                    required
+                    value={schedEnd}
+                    onChange={(e) => setSchedEnd(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-[#F4F7F9] border border-[#B7C9D6] rounded-xl text-xs outline-none"
+                  />
+                </div>
+              </div>
+
+              {schedSuccess && (
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{schedSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSchedulingExercise(null)}
+                  className="px-3 py-1.5 text-xs text-[#9BA7B8] hover:text-[#1E2538]"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 rounded-xl bg-[#1E2538] hover:bg-[#2C3652] text-white font-medium text-xs shadow-xs"
+                >
+                  Ajouter au planning
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

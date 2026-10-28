@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   collection,
   query,
@@ -8,10 +8,10 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  getDocs
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { useAuth } from './AuthContext';
+import { loadLocalData, saveLocalData } from '../lib/storage';
 import {
   LearningModule,
   Exercise,
@@ -62,27 +62,38 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
-  const [modules, setModules] = useState<LearningModule[]>([]);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
-  const [activities, setActivities] = useState<ScheduleActivity[]>([]);
-  const [sessions, setSessions] = useState<StudySession[]>([]);
-  const [reviews, setReviews] = useState<DailyReview[]>([]);
+  // Initialize state immediately from localStorage so data NEVER vanishes on refresh
+  const initialLocalData = useRef(loadLocalData(user?.uid)).current;
+  const [modules, setModules] = useState<LearningModule[]>(initialLocalData.modules);
+  const [exercises, setExercises] = useState<Exercise[]>(initialLocalData.exercises);
+  const [activities, setActivities] = useState<ScheduleActivity[]>(initialLocalData.activities);
+  const [sessions, setSessions] = useState<StudySession[]>(initialLocalData.sessions);
+  const [reviews, setReviews] = useState<DailyReview[]>(initialLocalData.reviews);
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Firestore real-time subscriptions
+  // Sync to local storage whenever state changes
   useEffect(() => {
+    saveLocalData(user?.uid, { modules, exercises, activities, sessions, reviews });
+  }, [modules, exercises, activities, sessions, reviews, user?.uid]);
+
+  // Firestore real-time subscriptions & sync
+  useEffect(() => {
+    // If auth state is still loading, wait before changing listeners
+    if (authLoading) return;
+
     if (!user) {
-      // Clear or load empty state
-      setModules([]);
-      setExercises([]);
-      setActivities([]);
-      setSessions([]);
-      setReviews([]);
+      // Unauthenticated / offline mode: reload local data safely
+      const local = loadLocalData(null);
+      setModules(local.modules);
+      setExercises(local.exercises);
+      setActivities(local.activities);
+      setSessions(local.sessions);
+      setReviews(local.reviews);
       setIsLoadingData(false);
       return;
     }
@@ -113,12 +124,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         items.sort((a, b) => (a.order || 0) - (b.order || 0));
         setModules(items);
+        saveLocalData(user.uid, { modules: items });
         setIsLoadingData(false);
       },
       (error) => {
-        console.error('Modules listener error:', error);
-        setSyncError('Erreur de synchronisation des modules');
-        handleFirestoreError(error, OperationType.GET, modulesCol);
+        console.warn('Modules listener warning:', error);
+        // Do not crash, keep local data
+        setIsLoadingData(false);
       }
     );
 
@@ -133,11 +145,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           items.push({ id: docSnap.id, ...docSnap.data() } as Exercise);
         });
         setExercises(items);
+        saveLocalData(user.uid, { exercises: items });
       },
       (error) => {
-        console.error('Exercises listener error:', error);
-        setSyncError('Erreur de synchronisation des exercices');
-        handleFirestoreError(error, OperationType.GET, exercisesCol);
+        console.warn('Exercises listener warning:', error);
       }
     );
 
@@ -153,11 +164,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         items.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
         setActivities(items);
+        saveLocalData(user.uid, { activities: items });
       },
       (error) => {
-        console.error('Activities listener error:', error);
-        setSyncError('Erreur de synchronisation du planning');
-        handleFirestoreError(error, OperationType.GET, activitiesCol);
+        console.warn('Activities listener warning:', error);
       }
     );
 
@@ -173,10 +183,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         items.sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
         setSessions(items);
+        saveLocalData(user.uid, { sessions: items });
       },
       (error) => {
-        console.error('Sessions listener error:', error);
-        handleFirestoreError(error, OperationType.GET, sessionsCol);
+        console.warn('Sessions listener warning:', error);
       }
     );
 
@@ -192,10 +202,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         items.sort((a, b) => b.date.localeCompare(a.date));
         setReviews(items);
+        saveLocalData(user.uid, { reviews: items });
       },
       (error) => {
-        console.error('Reviews listener error:', error);
-        handleFirestoreError(error, OperationType.GET, reviewsCol);
+        console.warn('Reviews listener warning:', error);
       }
     );
 
@@ -206,283 +216,370 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubSessions();
       unsubReviews();
     };
-  }, [user]);
+  }, [user, authLoading]);
 
   // Actions: Module
   const saveModule = async (moduleData: Partial<LearningModule> & { subject: SubjectId; title: string }): Promise<string> => {
-    if (!user) throw new Error('Authentification requise pour enregistrer un module');
     setIsSyncing(true);
     const id = moduleData.id || `mod_${Date.now()}`;
-    const path = `modules/${id}`;
-    try {
-      const now = new Date().toISOString();
-      const payload: any = {
-        id,
-        userId: user.uid,
-        subject: moduleData.subject,
-        title: moduleData.title.trim(),
-        order: moduleData.order ?? modules.filter(m => m.subject === moduleData.subject).length + 1,
-        objective: moduleData.objective || '',
-        status: moduleData.status || 'not_started',
-        notes: moduleData.notes || '',
-        resources: JSON.stringify(moduleData.resources || []),
-        updatedAt: now,
-      };
-      if (!moduleData.id) {
-        payload.createdAt = now;
+    const now = new Date().toISOString();
+    const payload: LearningModule = {
+      id,
+      userId: user?.uid || 'local',
+      subject: moduleData.subject,
+      title: moduleData.title.trim(),
+      order: moduleData.order ?? modules.filter(m => m.subject === moduleData.subject).length + 1,
+      objective: moduleData.objective || '',
+      status: moduleData.status || 'not_started',
+      notes: moduleData.notes || '',
+      resources: moduleData.resources || [],
+      createdAt: moduleData.createdAt || now,
+      updatedAt: now,
+    };
+
+    // Update state & localStorage immediately
+    setModules((prev) => {
+      const idx = prev.findIndex((m) => m.id === id);
+      const next = idx >= 0 ? prev.map((m, i) => (i === idx ? payload : m)) : [...prev, payload];
+      saveLocalData(user?.uid, { modules: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        const firestorePayload = {
+          ...payload,
+          resources: JSON.stringify(payload.resources || []),
+        };
+        await setDoc(doc(db, 'modules', id), firestorePayload, { merge: true });
+      } catch (error) {
+        console.warn('Failed to sync module to Firestore:', error);
       }
-      await setDoc(doc(db, 'modules', id), payload, { merge: true });
-      return id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
     }
+
+    setIsSyncing(false);
+    return id;
   };
 
   const deleteModule = async (moduleId: string): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
-    const path = `modules/${moduleId}`;
-    try {
-      await deleteDoc(doc(db, 'modules', moduleId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
+    setModules((prev) => {
+      const next = prev.filter((m) => m.id !== moduleId);
+      saveLocalData(user?.uid, { modules: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'modules', moduleId));
+      } catch (error) {
+        console.warn('Failed to delete module from Firestore:', error);
+      }
     }
+    setIsSyncing(false);
   };
 
   const updateModuleStatus = async (moduleId: string, status: ModuleStatus): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
-    const path = `modules/${moduleId}`;
-    try {
-      await updateDoc(doc(db, 'modules', moduleId), {
-        status,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-      throw error;
+    const now = new Date().toISOString();
+    setModules((prev) => {
+      const next = prev.map((m) => (m.id === moduleId ? { ...m, status, updatedAt: now } : m));
+      saveLocalData(user?.uid, { modules: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'modules', moduleId), {
+          status,
+          updatedAt: now,
+        });
+      } catch (error) {
+        console.warn('Failed to update module status in Firestore:', error);
+      }
     }
   };
 
   // Actions: Exercise
   const saveExercise = async (exerciseData: Partial<Exercise> & { subject: SubjectId; moduleId: string; title: string }): Promise<string> => {
-    if (!user) throw new Error('Authentification requise pour enregistrer un exercice');
     setIsSyncing(true);
     const id = exerciseData.id || `ex_${Date.now()}`;
-    const path = `exercises/${id}`;
-    try {
-      const now = new Date().toISOString();
-      const payload: any = {
-        id,
-        userId: user.uid,
-        subject: exerciseData.subject,
-        moduleId: exerciseData.moduleId,
-        title: exerciseData.title.trim(),
-        description: exerciseData.description || '',
-        statement: exerciseData.statement || '',
-        link: exerciseData.link || '',
-        driveFileId: exerciseData.driveFileId || '',
-        driveFileName: exerciseData.driveFileName || '',
-        solutionNotes: exerciseData.solutionNotes || '',
-        difficulty: exerciseData.difficulty || 'facile',
-        estimatedMinutes: Number(exerciseData.estimatedMinutes) || 30,
-        status: exerciseData.status || 'not_started',
-        scheduledActivityId: exerciseData.scheduledActivityId || '',
-        updatedAt: now,
-      };
-      if (!exerciseData.id) {
-        payload.createdAt = now;
+    const now = new Date().toISOString();
+    const payload: Exercise = {
+      id,
+      userId: user?.uid || 'local',
+      subject: exerciseData.subject,
+      moduleId: exerciseData.moduleId,
+      title: exerciseData.title.trim(),
+      description: exerciseData.description || '',
+      statement: exerciseData.statement || '',
+      link: exerciseData.link || '',
+      driveFileId: exerciseData.driveFileId || '',
+      driveFileName: exerciseData.driveFileName || '',
+      solutionNotes: exerciseData.solutionNotes || '',
+      difficulty: exerciseData.difficulty || 'facile',
+      estimatedMinutes: Number(exerciseData.estimatedMinutes) || 30,
+      status: exerciseData.status || 'not_started',
+      scheduledActivityId: exerciseData.scheduledActivityId || '',
+      createdAt: exerciseData.createdAt || now,
+      updatedAt: now,
+    };
+
+    setExercises((prev) => {
+      const idx = prev.findIndex((e) => e.id === id);
+      const next = idx >= 0 ? prev.map((e, i) => (i === idx ? payload : e)) : [...prev, payload];
+      saveLocalData(user?.uid, { exercises: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await setDoc(doc(db, 'exercises', id), payload, { merge: true });
+      } catch (error) {
+        console.warn('Failed to sync exercise to Firestore:', error);
       }
-      await setDoc(doc(db, 'exercises', id), payload, { merge: true });
-      return id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
     }
+
+    setIsSyncing(false);
+    return id;
   };
 
   const deleteExercise = async (exerciseId: string): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
-    const path = `exercises/${exerciseId}`;
-    try {
-      await deleteDoc(doc(db, 'exercises', exerciseId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
+    setExercises((prev) => {
+      const next = prev.filter((e) => e.id !== exerciseId);
+      saveLocalData(user?.uid, { exercises: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'exercises', exerciseId));
+      } catch (error) {
+        console.warn('Failed to delete exercise from Firestore:', error);
+      }
     }
+    setIsSyncing(false);
   };
 
   const updateExerciseStatus = async (exerciseId: string, status: ExerciseStatus): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
-    const path = `exercises/${exerciseId}`;
-    try {
-      await updateDoc(doc(db, 'exercises', exerciseId), {
-        status,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-      throw error;
+    const now = new Date().toISOString();
+    setExercises((prev) => {
+      const next = prev.map((e) => (e.id === exerciseId ? { ...e, status, updatedAt: now } : e));
+      saveLocalData(user?.uid, { exercises: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'exercises', exerciseId), {
+          status,
+          updatedAt: now,
+        });
+      } catch (error) {
+        console.warn('Failed to update exercise status in Firestore:', error);
+      }
     }
   };
 
   // Actions: Activities
   const saveActivity = async (activityData: Partial<ScheduleActivity> & { title: string; date: string; startTime: string; endTime: string }): Promise<string> => {
-    if (!user) throw new Error('Authentification requise pour enregistrer une activité');
     setIsSyncing(true);
-    const id = activityData.id || `act_${Date.now()}`;
-    const path = `activities/${id}`;
-    try {
-      const now = new Date().toISOString();
-      const startMinutes = parseTimeToMinutes(activityData.startTime);
-      const endMinutes = parseTimeToMinutes(activityData.endTime);
-      const duration = Math.max(10, endMinutes - startMinutes);
+    const id = activityData.id || `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+    const startMinutes = parseTimeToMinutes(activityData.startTime);
+    const endMinutes = parseTimeToMinutes(activityData.endTime);
+    const duration = Math.max(10, endMinutes - startMinutes);
 
-      const payload: any = {
-        id,
-        userId: user.uid,
-        title: activityData.title.trim(),
-        type: activityData.type || 'study_session',
-        subject: activityData.subject || '',
-        moduleId: activityData.moduleId || '',
-        exerciseId: activityData.exerciseId || '',
-        date: activityData.date,
-        startTime: activityData.startTime,
-        endTime: activityData.endTime,
-        durationMinutes: duration,
-        isFixed: Boolean(activityData.isFixed),
-        isCompleted: Boolean(activityData.isCompleted),
-        notes: activityData.notes || '',
-        aiProposed: Boolean(activityData.aiProposed),
-        aiRationale: activityData.aiRationale || '',
-        updatedAt: now,
-      };
-      if (!activityData.id) {
-        payload.createdAt = now;
+    const payload: ScheduleActivity = {
+      id,
+      userId: user?.uid || 'local',
+      title: activityData.title.trim(),
+      type: activityData.type || 'study_session',
+      subject: activityData.subject,
+      moduleId: activityData.moduleId,
+      exerciseId: activityData.exerciseId,
+      date: activityData.date,
+      startTime: activityData.startTime,
+      endTime: activityData.endTime,
+      durationMinutes: duration,
+      isFixed: Boolean(activityData.isFixed),
+      isCompleted: Boolean(activityData.isCompleted),
+      notes: activityData.notes || '',
+      aiProposed: Boolean(activityData.aiProposed),
+      aiRationale: activityData.aiRationale || '',
+      createdAt: activityData.createdAt || now,
+      updatedAt: now,
+    };
+
+    setActivities((prev) => {
+      const idx = prev.findIndex((a) => a.id === id);
+      const next = idx >= 0 ? prev.map((a, i) => (i === idx ? payload : a)) : [...prev, payload];
+      next.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      saveLocalData(user?.uid, { activities: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await setDoc(doc(db, 'activities', id), payload, { merge: true });
+      } catch (error) {
+        console.warn('Failed to sync activity to Firestore:', error);
       }
-      await setDoc(doc(db, 'activities', id), payload, { merge: true });
-      return id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
     }
+
+    setIsSyncing(false);
+    return id;
   };
 
   const deleteActivity = async (activityId: string): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
-    const path = `activities/${activityId}`;
-    try {
-      await deleteDoc(doc(db, 'activities', activityId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
+    setActivities((prev) => {
+      const next = prev.filter((a) => a.id !== activityId);
+      saveLocalData(user?.uid, { activities: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'activities', activityId));
+      } catch (error) {
+        console.warn('Failed to delete activity from Firestore:', error);
+      }
     }
+    setIsSyncing(false);
   };
 
   const toggleActivityComplete = async (activityId: string): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
     const act = activities.find(a => a.id === activityId);
     if (!act) return;
-    const path = `activities/${activityId}`;
-    try {
-      await updateDoc(doc(db, 'activities', activityId), {
-        isCompleted: !act.isCompleted,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-      throw error;
+    const now = new Date().toISOString();
+    const nextCompleted = !act.isCompleted;
+
+    setActivities((prev) => {
+      const next = prev.map((a) => (a.id === activityId ? { ...a, isCompleted: nextCompleted, updatedAt: now } : a));
+      saveLocalData(user?.uid, { activities: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'activities', activityId), {
+          isCompleted: nextCompleted,
+          updatedAt: now,
+        });
+      } catch (error) {
+        console.warn('Failed to toggle activity in Firestore:', error);
+      }
     }
   };
 
   const applyReorganizedSchedule = async (newActivities: ScheduleActivity[]): Promise<void> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
-    try {
-      for (const act of newActivities) {
-        const id = act.id || `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        await setDoc(doc(db, 'activities', id), {
-          ...act,
-          id,
-          userId: user.uid,
-          updatedAt: new Date().toISOString(),
-          createdAt: act.createdAt || new Date().toISOString(),
-        }, { merge: true });
+    const now = new Date().toISOString();
+
+    const preparedActivities = newActivities.map((act) => ({
+      ...act,
+      id: act.id || `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      userId: user?.uid || 'local',
+      updatedAt: now,
+      createdAt: act.createdAt || now,
+    }));
+
+    // Identify target dates affected
+    const targetDates = Array.from(new Set(preparedActivities.map((a) => a.date)));
+
+    setActivities((prev) => {
+      // Keep activities from other dates
+      const preservedOtherDates = prev.filter((a) => !targetDates.includes(a.date));
+      // For target dates, keep fixed activities if not present in newActivities
+      const fixedToKeep = prev.filter((a) => 
+        targetDates.includes(a.date) && 
+        a.isFixed && 
+        !preparedActivities.some((na) => na.id === a.id)
+      );
+
+      const next = [...preservedOtherDates, ...fixedToKeep, ...preparedActivities];
+      next.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      saveLocalData(user?.uid, { activities: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        for (const act of preparedActivities) {
+          await setDoc(doc(db, 'activities', act.id), act, { merge: true });
+        }
+      } catch (error) {
+        console.warn('Failed to sync batch reorganized activities to Firestore:', error);
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'activities/batch');
-      throw error;
-    } finally {
-      setIsSyncing(false);
     }
+
+    setIsSyncing(false);
   };
 
   // Actions: Sessions (Focus / Chrono)
   const logStudySession = async (sessionData: Omit<StudySession, 'id' | 'userId' | 'createdAt'>): Promise<string> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
     const id = `sess_${Date.now()}`;
-    const path = `sessions/${id}`;
-    try {
-      const now = new Date().toISOString();
-      const payload = {
-        ...sessionData,
-        id,
-        userId: user.uid,
-        createdAt: now,
-      };
-      await setDoc(doc(db, 'sessions', id), payload);
-      return id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
+    const now = new Date().toISOString();
+    const payload: StudySession = {
+      ...sessionData,
+      id,
+      userId: user?.uid || 'local',
+      createdAt: now,
+    };
+
+    setSessions((prev) => {
+      const next = [payload, ...prev];
+      saveLocalData(user?.uid, { sessions: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await setDoc(doc(db, 'sessions', id), payload);
+      } catch (error) {
+        console.warn('Failed to sync session to Firestore:', error);
+      }
     }
+
+    setIsSyncing(false);
+    return id;
   };
 
   // Actions: Reviews
   const saveDailyReview = async (reviewData: Omit<DailyReview, 'id' | 'userId' | 'createdAt'>): Promise<string> => {
-    if (!user) throw new Error('Authentification requise');
     setIsSyncing(true);
     const id = `rev_${reviewData.date}`;
-    const path = `reviews/${id}`;
-    try {
-      const now = new Date().toISOString();
-      const payload = {
-        ...reviewData,
-        id,
-        userId: user.uid,
-        createdAt: now,
-      };
-      await setDoc(doc(db, 'reviews', id), payload, { merge: true });
-      return id;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
-      throw error;
-    } finally {
-      setIsSyncing(false);
+    const now = new Date().toISOString();
+    const payload: DailyReview = {
+      ...reviewData,
+      id,
+      userId: user?.uid || 'local',
+      createdAt: now,
+    };
+
+    setReviews((prev) => {
+      const idx = prev.findIndex((r) => r.id === id);
+      const next = idx >= 0 ? prev.map((r, i) => (i === idx ? payload : r)) : [payload, ...prev];
+      saveLocalData(user?.uid, { reviews: next });
+      return next;
+    });
+
+    if (user) {
+      try {
+        await setDoc(doc(db, 'reviews', id), payload, { merge: true });
+      } catch (error) {
+        console.warn('Failed to sync review to Firestore:', error);
+      }
     }
+
+    setIsSyncing(false);
+    return id;
   };
 
   // Helper: Seed foundational roadmap modules if collection is completely empty
   const seedInitialDataIfEmpty = async () => {
-    if (!user) return;
     if (modules.length > 0) return;
 
     const initialModules: Array<{ subject: SubjectId; title: string; objective: string; order: number }> = [

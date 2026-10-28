@@ -24,7 +24,7 @@ export const AvailabilityModal: React.FC<AvailabilityModalProps> = ({
   onClose,
   defaultDate,
 }) => {
-  const { saveActivity, modules, exercises } = useData();
+  const { saveActivity, activities, modules, exercises } = useData();
 
   const todayStr = defaultDate || new Date().toISOString().split('T')[0];
 
@@ -40,14 +40,46 @@ export const AvailabilityModal: React.FC<AvailabilityModalProps> = ({
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Sync date when defaultDate prop or modal open state changes
+  React.useEffect(() => {
+    if (isOpen) {
+      const activeDate = defaultDate || new Date().toISOString().split('T')[0];
+      setDate(activeDate);
+      setSuccessMsg(null);
+      setError(null);
+
+      // Calculate next available time slot based on existing activities for that day
+      const dayActs = activities
+        .filter((a) => a.date === activeDate)
+        .sort((a, b) => (a.endTime || '').localeCompare(b.endTime || ''));
+
+      if (dayActs.length > 0) {
+        const lastAct = dayActs[dayActs.length - 1];
+        const [h, m] = lastAct.endTime.split(':').map(Number);
+        const startMins = h * 60 + m + 15; // 15 min break after previous activity
+        const endMins = startMins + 60;
+        const formatTime = (totalMins: number) => {
+          const hh = Math.floor(Math.min(23, totalMins / 60)).toString().padStart(2, '0');
+          const mm = (totalMins % 60).toString().padStart(2, '0');
+          return `${hh}:${mm}`;
+        };
+        if (startMins < 23 * 60) {
+          setStartTime(formatTime(startMins));
+          setEndTime(formatTime(endMins));
+        }
+      }
+    }
+  }, [isOpen, defaultDate, activities]);
 
   if (!isOpen) return null;
 
+  const dayActivitiesCount = activities.filter((a) => a.date === date).length;
   const filteredModules = subject ? modules.filter((m) => m.subject === subject) : [];
   const filteredExercises = moduleId ? exercises.filter((e) => e.moduleId === moduleId) : [];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (andContinue: boolean = false) => {
     if (!title.trim()) {
       setError('Veuillez renseigner un titre pour cette activité.');
       return;
@@ -59,6 +91,7 @@ export const AvailabilityModal: React.FC<AvailabilityModalProps> = ({
 
     setIsSaving(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       await saveActivity({
         title: title.trim(),
@@ -73,12 +106,37 @@ export const AvailabilityModal: React.FC<AvailabilityModalProps> = ({
         isCompleted: false,
         notes: notes.trim(),
       });
-      onClose();
+
+      if (andContinue) {
+        setSuccessMsg(`Activité "${title.trim()}" ajoutée au planning ! Vous pouvez en ajouter une autre.`);
+        setTitle('');
+        setNotes('');
+        // Advance time slot for the next activity
+        const [eh, em] = endTime.split(':').map(Number);
+        const nextStartMins = eh * 60 + em + 15;
+        const nextEndMins = nextStartMins + 60;
+        const formatTime = (totalMins: number) => {
+          const hh = Math.floor(Math.min(23, totalMins / 60)).toString().padStart(2, '0');
+          const mm = (totalMins % 60).toString().padStart(2, '0');
+          return `${hh}:${mm}`;
+        };
+        if (nextStartMins < 23 * 60) {
+          setStartTime(formatTime(nextStartMins));
+          setEndTime(formatTime(nextEndMins));
+        }
+      } else {
+        onClose();
+      }
     } catch (err: any) {
       setError(err.message || 'Erreur lors de l’enregistrement de l’activité.');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSave(false);
   };
 
   const handleQuickPreset = (presetType: ActivityType, defaultTitle: string, fixed: boolean) => {
@@ -351,29 +409,53 @@ export const AvailabilityModal: React.FC<AvailabilityModalProps> = ({
             />
           </div>
 
+          {/* Success Flash */}
+          {successMsg && (
+            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2">
+              <span>{successMsg}</span>
+              <span className="font-semibold text-[11px] bg-emerald-100 px-2 py-0.5 rounded-full">
+                {dayActivitiesCount} activité(s) ce jour
+              </span>
+            </div>
+          )}
+
           {error && (
             <div className="p-2.5 rounded-xl bg-[#D9E8F4] border border-[#B7C9D6] text-[#1E2538] text-xs">
               {error}
             </div>
           )}
 
-          {/* Buttons */}
-          <div className="flex items-center justify-end gap-2.5 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-[#9BA7B8] hover:text-[#1E2538] transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1E2538] hover:bg-[#2C3652] text-white font-medium text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{isSaving ? 'Enregistrement...' : 'Ajouter au planning'}</span>
-            </button>
+          {/* Buttons: Support adding multiple activities in one go */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2">
+            <span className="text-[11px] text-[#9BA7B8]">
+              {dayActivitiesCount > 0 ? `${dayActivitiesCount} activité(s) déjà planifiée(s) pour ce jour.` : 'Première activité pour ce jour.'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-2 rounded-xl text-xs font-medium text-[#9BA7B8] hover:text-[#1E2538] transition-colors"
+              >
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                disabled={isSaving}
+                className="px-3.5 py-2 rounded-xl bg-[#D9E8F4] hover:bg-[#C5D9E9] text-[#1E2538] font-medium text-xs border border-[#B7C9D6] transition-all cursor-pointer disabled:opacity-50"
+                title="Enregistre cette activité et prépare la suivante pour la même journée"
+              >
+                + Ajouter et continuer
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1E2538] hover:bg-[#2C3652] text-white font-medium text-xs shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{isSaving ? 'Enregistrement...' : 'Enregistrer'}</span>
+              </button>
+            </div>
           </div>
 
         </form>
