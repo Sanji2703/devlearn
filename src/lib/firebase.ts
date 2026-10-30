@@ -12,6 +12,7 @@ import {
   doc,
   getDocFromServer
 } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App
@@ -23,6 +24,9 @@ export const db = (firebaseConfig as any).firestoreDatabaseId
   : getFirestore(app);
 
 export const auth = getAuth(app);
+
+// Initialize Firebase Storage
+export const storage = getStorage(app);
 
 // Configure Google Auth Provider with Google Drive scope
 export const googleProvider = new GoogleAuthProvider();

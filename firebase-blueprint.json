@@ -135,6 +135,28 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["userId"]
+    },
+    "materials": {
+      "title": "LearningMaterial",
+      "description": "Uploaded study files and learning resources metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "fileType": { "type": "string", "maxLength": 100 },
+        "fileSize": { "type": "number" },
+        "storagePath": { "type": "string", "maxLength": 500 },
+        "downloadUrl": { "type": "string", "maxLength": 2000 },
+        "subject": { "type": "string", "maxLength": 20 },
+        "moduleId": { "type": "string", "maxLength": 128 },
+        "exerciseId": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "storageType": { "type": "string", "enum": ["firebase_storage", "drive", "local_storage"] },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId", "fileName", "fileType", "fileSize"]
     }
   },
   "firestore": {
@@ -165,6 +187,10 @@
     "/settings/{settingsId}": {
       "schema": "settings",
       "description": "User preferences document"
+    },
+    "/materials/{materialId}": {
+      "schema": "materials",
+      "description": "Uploaded learning documents and file references"
     }
   }
 }

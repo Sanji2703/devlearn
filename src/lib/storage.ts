@@ -5,6 +5,7 @@ import {
   StudySession,
   DailyReview,
   UserSettings,
+  LearningMaterial,
   DEFAULT_USER_SETTINGS,
 } from '../types';
 
@@ -17,6 +18,7 @@ export interface LocalAppData {
   sessions: StudySession[];
   reviews: DailyReview[];
   settings: UserSettings;
+  materials: LearningMaterial[];
 }
 
 function getStorageKey(userId?: string | null): string {
@@ -26,7 +28,7 @@ function getStorageKey(userId?: string | null): string {
 export function loadLocalData(userId?: string | null): LocalAppData {
   const fallbackSettings = { ...DEFAULT_USER_SETTINGS, userId: userId || 'local' };
   if (typeof window === 'undefined') {
-    return { modules: [], exercises: [], activities: [], sessions: [], reviews: [], settings: fallbackSettings };
+    return { modules: [], exercises: [], activities: [], sessions: [], reviews: [], settings: fallbackSettings, materials: [] };
   }
 
   try {
@@ -40,6 +42,7 @@ export function loadLocalData(userId?: string | null): LocalAppData {
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
         reviews: Array.isArray(parsed.reviews) ? parsed.reviews : [],
         settings: parsed.settings ? { ...fallbackSettings, ...parsed.settings } : fallbackSettings,
+        materials: Array.isArray(parsed.materials) ? parsed.materials : [],
       };
     }
 
@@ -55,6 +58,7 @@ export function loadLocalData(userId?: string | null): LocalAppData {
           sessions: Array.isArray(parsedGuest.sessions) ? parsedGuest.sessions : [],
           reviews: Array.isArray(parsedGuest.reviews) ? parsedGuest.reviews : [],
           settings: parsedGuest.settings ? { ...fallbackSettings, ...parsedGuest.settings } : fallbackSettings,
+          materials: Array.isArray(parsedGuest.materials) ? parsedGuest.materials : [],
         };
       }
     }
@@ -62,7 +66,7 @@ export function loadLocalData(userId?: string | null): LocalAppData {
     console.warn('Error reading from localStorage:', err);
   }
 
-  return { modules: [], exercises: [], activities: [], sessions: [], reviews: [], settings: fallbackSettings };
+  return { modules: [], exercises: [], activities: [], sessions: [], reviews: [], settings: fallbackSettings, materials: [] };
 }
 
 export function saveLocalData(userId: string | null | undefined, data: Partial<LocalAppData>): void {
@@ -77,6 +81,7 @@ export function saveLocalData(userId: string | null | undefined, data: Partial<L
       sessions: data.sessions !== undefined ? data.sessions : current.sessions,
       reviews: data.reviews !== undefined ? data.reviews : current.reviews,
       settings: data.settings !== undefined ? data.settings : current.settings,
+      materials: data.materials !== undefined ? data.materials : current.materials,
     };
 
     localStorage.setItem(getStorageKey(userId), JSON.stringify(updated));

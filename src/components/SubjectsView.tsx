@@ -27,16 +27,19 @@ interface SubjectsViewProps {
   selectedSubject: SubjectId;
   onSelectSubject: (sub: SubjectId) => void;
   onNavigateToExercisesForModule: (subject: SubjectId, moduleId: string) => void;
+  onOpenMaterials?: (subject: SubjectId, moduleId?: string) => void;
 }
 
 export const SubjectsView: React.FC<SubjectsViewProps> = ({
   selectedSubject,
   onSelectSubject,
   onNavigateToExercisesForModule,
+  onOpenMaterials,
 }) => {
   const {
     modules,
     exercises,
+    materials,
     saveModule,
     deleteModule,
     updateModuleStatus,
@@ -348,28 +351,72 @@ export const SubjectsView: React.FC<SubjectsViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Resources (Google Drive, Links, Docs) */}
+                    {/* Resources (Google Drive, Links, Docs, and Uploaded Files) */}
                     <div className="p-4 rounded-xl bg-white border border-[#B7C9D6] shadow-xs">
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <span className="text-xs font-bold text-[#1E2538] flex items-center gap-1.5">
                           <FolderOpen className="w-4 h-4 text-[#1E2538]" />
-                          Mes supports de cours ({mod.resources?.length || 0})
+                          Mes supports de cours ({(mod.resources?.length || 0) + materials.filter((m) => m.moduleId === mod.id).length})
                         </span>
-                        <button
-                          onClick={() => openEditModal(mod)}
-                          className="text-xs text-[#1E2538] hover:underline font-semibold"
-                        >
-                          + Gérer mes supports
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {onOpenMaterials && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenMaterials(selectedSubject, mod.id)}
+                              className="px-2.5 py-1 text-xs bg-[#1E2538] hover:bg-[#2C3652] text-white rounded-lg font-medium transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              + Importer un fichier
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(mod)}
+                            className="text-xs text-[#1E2538] hover:underline font-semibold"
+                          >
+                            Gérer liens & Drive
+                          </button>
+                        </div>
                       </div>
 
-                      {(!mod.resources || mod.resources.length === 0) ? (
+                      {(!mod.resources || mod.resources.length === 0) && materials.filter((m) => m.moduleId === mod.id).length === 0 ? (
                         <p className="text-xs text-[#9BA7B8]">
-                          Aucun support associé. Cliquez sur « Gérer mes supports » pour ajouter un document Google Drive, un lien web ou un PDF.
+                          Aucun support associé. Cliquez sur « Importer un fichier » pour charger un PDF, un fichier de code (C, C++, Python, SQL) depuis votre appareil ou « Gérer liens & Drive ».
                         </p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {mod.resources.map((res) => (
+                          {/* Uploaded Materials */}
+                          {materials
+                            .filter((m) => m.moduleId === mod.id)
+                            .map((mat) => (
+                              <div
+                                key={mat.id}
+                                className="p-2.5 rounded-lg bg-[#D9E8F4]/50 border border-[#B7C9D6] flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="flex items-center gap-2 truncate">
+                                  <FolderOpen className="w-3.5 h-3.5 text-[#1E2538] shrink-0" />
+                                  <div className="truncate">
+                                    <span className="font-semibold text-[#1E2538] block truncate">{mat.fileName}</span>
+                                    <span className="text-[10px] text-[#9BA7B8]">
+                                      {mat.storageType === 'firebase_storage' ? 'Cloud' : 'Local'}
+                                    </span>
+                                  </div>
+                                </div>
+                                {mat.downloadUrl && (
+                                  <a
+                                    href={mat.downloadUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#1E2538] hover:text-[#9BA7B8] p-1 shrink-0"
+                                    title="Ouvrir / Télécharger"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+
+                          {/* External Links / Drive files */}
+                          {mod.resources?.map((res) => (
                             <div
                               key={res.id}
                               className="p-2.5 rounded-lg bg-[#D9E8F4]/40 border border-[#B7C9D6] flex items-center justify-between gap-2 text-xs"

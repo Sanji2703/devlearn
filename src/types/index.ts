@@ -86,14 +86,33 @@ export const DIFFICULTY_LABELS: Record<ExerciseDifficulty, { label: string; colo
   difficile: { label: 'Difficile', color: 'text-white bg-[#1E2538] border border-[#1E2538]' },
 };
 
+export interface LearningMaterial {
+  id: string;
+  userId: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  storagePath: string;
+  downloadUrl: string;
+  subject?: SubjectId;
+  moduleId?: string;
+  exerciseId?: string;
+  description?: string;
+  storageType: 'firebase_storage' | 'drive' | 'local_storage';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ResourceItem {
   id: string;
   title: string;
-  type: 'link' | 'drive_file' | 'note' | 'doc';
+  type: 'link' | 'drive_file' | 'note' | 'doc' | 'file';
   url?: string;
   driveFileId?: string;
   driveFileName?: string;
   content?: string;
+  materialId?: string;
+  fileSize?: number;
 }
 
 export interface LearningModule {

@@ -15,6 +15,7 @@ import { DailyReviewModal } from './components/DailyReviewModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { SyncStatusModal } from './components/SyncStatusModal';
 import { SettingsModal } from './components/SettingsModal';
+import { MaterialsModal } from './components/MaterialsModal';
 import { SubjectId } from './types';
 
 function MainApp() {
@@ -29,9 +30,11 @@ function MainApp() {
   const [isDailyReviewOpen, setIsDailyReviewOpen] = useState(false);
   const [isSyncStatusOpen, setIsSyncStatusOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMaterialsOpen, setIsMaterialsOpen] = useState(false);
+  const [materialsSubject, setMaterialsSubject] = useState<SubjectId | undefined>(undefined);
+  const [materialsModuleId, setMaterialsModuleId] = useState<string | undefined>(undefined);
   const todayStr = new Date().toISOString().split('T')[0];
   const [targetModalDate, setTargetModalDate] = useState<string>(todayStr);
-
 
   const handleOpenAvailability = (date?: string) => {
     setTargetModalDate(date || todayStr);
@@ -41,6 +44,12 @@ function MainApp() {
   const handleOpenReorganize = (date?: string) => {
     setTargetModalDate(date || todayStr);
     setIsReorganizeOpen(true);
+  };
+
+  const handleOpenMaterials = (subject?: SubjectId, moduleId?: string) => {
+    setMaterialsSubject(subject);
+    setMaterialsModuleId(moduleId);
+    setIsMaterialsOpen(true);
   };
 
   const handleRetryToken = async () => {
@@ -166,6 +175,7 @@ function MainApp() {
         onOpenDailyReview={() => setIsDailyReviewOpen(true)}
         onOpenSyncStatus={() => setIsSyncStatusOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenMaterials={() => handleOpenMaterials()}
       />
 
 
@@ -188,6 +198,7 @@ function MainApp() {
             selectedSubject={selectedSubject}
             onSelectSubject={setSelectedSubject}
             onNavigateToExercisesForModule={handleNavigateToExercisesForModule}
+            onOpenMaterials={handleOpenMaterials}
           />
         )}
 
@@ -245,6 +256,13 @@ function MainApp() {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <MaterialsModal
+        isOpen={isMaterialsOpen}
+        onClose={() => setIsMaterialsOpen(false)}
+        defaultSubject={materialsSubject}
+        defaultModuleId={materialsModuleId}
       />
     </div>
 

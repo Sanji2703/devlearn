@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   Smartphone,
   Settings,
+  FolderOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -28,6 +29,7 @@ interface NavbarProps {
   onOpenDailyReview: () => void;
   onOpenSyncStatus: () => void;
   onOpenSettings: () => void;
+  onOpenMaterials: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -37,6 +39,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDailyReview,
   onOpenSyncStatus,
   onOpenSettings,
+  onOpenMaterials,
 }) => {
   const { user, logout } = useAuth();
   const { isSyncing, syncError, syncStatus } = useData();
@@ -119,6 +122,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <ClipboardCheck className="w-3.5 h-3.5 text-[#1E2538]" />
               <span className="hidden xl:inline">Bilan</span>
+            </button>
+
+            {/* Quick Supports / Fichiers button */}
+            <button
+              onClick={onOpenMaterials}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-xl bg-[#D9E8F4] hover:bg-[#C5D9E9] text-[#1E2538] border border-[#B7C9D6] transition-all cursor-pointer"
+              title="Gérer mes fichiers et supports pédagogiques (PDF, Code C/Python/SQL, documents)"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#1E2538]" />
+              <span className="hidden sm:inline">Supports</span>
             </button>
 
             {/* Interactive Sync status button */}
